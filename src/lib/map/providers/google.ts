@@ -125,14 +125,20 @@ export class GoogleMapsProvider implements MapProvider {
       fillOpacity: style.fillOpacity,
       strokeColor: style.strokeColor,
       strokeWeight: style.strokeWeight,
-      clickable: true,
+      clickable: style.clickable !== false,
     })
     polygon.setMap(this.map)
     this.polygons.set(id, polygon)
   }
 
   updatePolygon(id: string, style: PolygonStyle): void {
-    this.polygons.get(id)?.setOptions(style)
+    this.polygons.get(id)?.setOptions({
+      fillColor: style.fillColor,
+      fillOpacity: style.fillOpacity,
+      strokeColor: style.strokeColor,
+      strokeWeight: style.strokeWeight,
+      clickable: style.clickable !== false,
+    })
   }
 
   updatePolygonCoords(id: string, coords: LatLng[]): void {

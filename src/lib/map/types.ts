@@ -50,10 +50,10 @@ export const DEFAULT_MAP_OPTIONS: MapOptions = {
 export const PARCEL_ZOOM_THRESHOLD = 15
 
 export const POLYGON_STYLES: Record<string, PolygonStyle> = {
-  grey: { fillColor: '#9ca3af', fillOpacity: 0.35, strokeColor: '#6b7280', strokeWeight: 2 },
-  green: { fillColor: '#22c55e', fillOpacity: 0.4, strokeColor: '#16a34a', strokeWeight: 2 },
-  orange: { fillColor: '#f97316', fillOpacity: 0.4, strokeColor: '#ea580c', strokeWeight: 2 },
-  drawing: { fillColor: '#3b82f6', fillOpacity: 0.2, strokeColor: '#2563eb', strokeWeight: 2 },
-  selected: { fillColor: '#8b5cf6', fillOpacity: 0.4, strokeColor: '#7c3aed', strokeWeight: 3 },
-  ada: { fillColor: '#3b82f6', fillOpacity: 0.08, strokeColor: '#2563eb', strokeWeight: 3 },
+  grey:     { fillColor: '#9ca3af', fillOpacity: 0.35, strokeColor: '#6b7280', strokeWeight: 2 },
+  green:    { fillColor: '#22c55e', fillOpacity: 0.4,  strokeColor: '#16a34a', strokeWeight: 2 },
+  orange:   { fillColor: '#f97316', fillOpacity: 0.4,  strokeColor: '#ea580c', strokeWeight: 2 },
+  drawing:  { fillColor: '#3b82f6', fillOpacity: 0.2,  strokeColor: '#2563eb', strokeWeight: 2 },
+  selected: { fillColor: '#8b5cf6', fillOpacity: 0.4,  strokeColor: '#7c3aed', strokeWeight: 3 },
+  ada:      { fillColor: '#3b82f6', fillOpacity: 0.08, strokeColor: '#2563eb', strokeWeight: 3, clickable: false },
 }

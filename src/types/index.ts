@@ -191,6 +191,7 @@ export interface PolygonStyle {
   fillOpacity: number
   strokeColor: string
   strokeWeight: number
+  clickable?: boolean
 }
 
 export interface ParcelMapFeature {
