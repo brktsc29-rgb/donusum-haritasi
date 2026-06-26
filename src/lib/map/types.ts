@@ -24,8 +24,13 @@ export interface MapProvider {
   removeMarker(id: string): void
   clearMarkers(): void
 
-  enableDrawMode(onComplete: (coords: LatLng[]) => void): void
+  enableDrawMode(
+    onComplete: (coords: LatLng[]) => void,
+    onPointsChange?: (count: number) => void
+  ): void
   disableDrawMode(): void
+  finishDrawNow(): void
+  undoLastDrawPoint(): void
 
   onPolygonClick(id: string, handler: () => void): void
   onClick(handler: (latlng: LatLng) => void): void
@@ -34,6 +39,7 @@ export interface MapProvider {
 
 export type MapProviderName = 'google' | 'mapbox' | 'leaflet'
 
+// Default map center: Kağıthane, İstanbul
 export const KAGITHANE_CENTER: LatLng = { lat: 41.0769, lng: 28.9764 }
 
 export const DEFAULT_MAP_OPTIONS: MapOptions = {
