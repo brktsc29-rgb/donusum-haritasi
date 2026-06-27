@@ -29,11 +29,6 @@ const DrawMap = dynamic(() => import('./DrawMap').then((m) => m.DrawMap), {
   ),
 })
 
-function coordsToGeoJsonPolygon(coords: LatLng[]): string {
-  const ring = [...coords, coords[0]].map((c) => [c.lng, c.lat])
-  return JSON.stringify({ type: 'Polygon', coordinates: [ring] })
-}
-
 function coordsToCentroid(coords: LatLng[]): LatLng {
   const lat = coords.reduce((s, c) => s + c.lat, 0) / coords.length
   const lng = coords.reduce((s, c) => s + c.lng, 0) / coords.length
@@ -124,22 +119,18 @@ export function ParcelForm() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
 
+      const neighborhoodId = fromMap?.neighborhoodId ?? data.neighborhood_id
       const block = fromMap
         ? { id: fromMap.blockId }
         : await orCreateBlock(data.neighborhood_id, data.block_id)
 
-      const boundaryGeoJson = drawnCoords.length >= 3
-        ? coordsToGeoJsonPolygon(drawnCoords)
-        : null
-      const center = drawnCoords.length >= 3 ? coordsToCentroid(drawnCoords) : null
-      const centerGeoJson = center
-        ? JSON.stringify({ type: 'Point', coordinates: [center.lng, center.lat] })
-        : null
+      const boundaryCoords = drawnCoords.length >= 3 ? drawnCoords : null
+      const centerCoord = drawnCoords.length >= 3 ? coordsToCentroid(drawnCoords) : null
 
       const parcel = await createParcel.mutateAsync({
         parcel: {
           block_id: block.id,
-          neighborhood_id: data.neighborhood_id,
+          neighborhood_id: neighborhoodId,
           parcel_no: data.parcel_no,
           is_auto_code: data.is_auto_code,
           is_manually_drawn: drawnCoords.length >= 3,
@@ -149,8 +140,8 @@ export function ParcelForm() {
           created_by: user?.id ?? null,
           updated_by: user?.id ?? null,
         },
-        boundaryGeoJson,
-        centerGeoJson,
+        boundaryCoords,
+        centerCoord,
       })
 
       const units: Array<{

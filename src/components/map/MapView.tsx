@@ -15,6 +15,23 @@ import type { LatLng } from '@/types'
 
 type MapMode = 'view' | 'draw-ada' | 'ada-info' | 'ada-drawn' | 'draw-parcel'
 
+async function reverseGeocodeNeighborhood(latlng: { lat: number; lng: number }): Promise<string | null> {
+  if (typeof window === 'undefined' || !window.google?.maps) return null
+  return new Promise((resolve) => {
+    const geocoder = new window.google.maps.Geocoder()
+    geocoder.geocode({ location: latlng, region: 'tr' }, (results, status) => {
+      if (status !== 'OK' || !results?.[0]) { resolve(null); return }
+      const comps = results[0].address_components ?? []
+      const n = comps.find((c: google.maps.GeocoderAddressComponent) =>
+        c.types.includes('sublocality_level_1') ||
+        c.types.includes('neighborhood') ||
+        c.types.includes('sublocality')
+      )
+      resolve(n?.long_name ?? null)
+    })
+  })
+}
+
 const MapContainer = dynamic(
   () => import('./MapContainer').then((m) => m.MapContainer),
   {
@@ -56,10 +73,25 @@ export function MapView() {
     })
   }, [parcels, filters])
 
-  const handleAdaDrawComplete = useCallback((coords: LatLng[]) => {
+  const handleAdaDrawComplete = useCallback(async (coords: LatLng[]) => {
     setAdaCoords(coords)
     setMode('ada-info')
-  }, [])
+    // Auto-detect neighborhood from drawn location
+    const centroid = {
+      lat: coords.reduce((s, c) => s + c.lat, 0) / coords.length,
+      lng: coords.reduce((s, c) => s + c.lng, 0) / coords.length,
+    }
+    try {
+      const name = await reverseGeocodeNeighborhood(centroid)
+      if (name) {
+        const matched = neighborhoods.find((n) =>
+          n.name.toLowerCase().includes(name.toLowerCase()) ||
+          name.toLowerCase().includes(n.name.toLowerCase())
+        )
+        if (matched) setAdaNeighborhoodId(matched.id)
+      }
+    } catch { /* ignore */ }
+  }, [neighborhoods])
 
   const handleAdaDrawCancel = useCallback(() => {
     setAdaCoords(undefined)

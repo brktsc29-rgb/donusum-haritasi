@@ -47,9 +47,10 @@ export function MapContainer({
     provider.initialize(containerRef.current, DEFAULT_MAP_OPTIONS).then(() => {
       provider.onZoomChange((z) => setZoom(z))
       if (searchRef.current) {
-        provider.initSearchBox(searchRef.current, (latlng) => {
+        provider.initSearchBox(searchRef.current, (latlng, name) => {
           provider.setCenter(latlng)
           provider.setZoom(17)
+          if (searchRef.current) searchRef.current.value = name
         })
       }
     })
