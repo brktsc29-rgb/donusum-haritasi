@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import { Plus, Loader2, Pencil, X, MapPin } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useMapParcels } from '@/hooks/useParcels'
-import { useNeighborhoods, useOrCreateBlock } from '@/hooks/useNeighborhoods'
+import { useNeighborhoods, useMapBlocks, useOrCreateBlock } from '@/hooks/useNeighborhoods'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,8 +48,10 @@ const MapFilters = dynamic(() => import('./MapFilters').then((m) => m.MapFilters
 
 export function MapView() {
   const router = useRouter()
-  const { data: parcels = [], isLoading } = useMapParcels()
+  const { data: parcels = [], isLoading: parcelsLoading } = useMapParcels()
+  const { data: blocks = [], isLoading: blocksLoading } = useMapBlocks()
   const { data: neighborhoods = [] } = useNeighborhoods()
+  const isLoading = parcelsLoading || blocksLoading
   const orCreateBlock = useOrCreateBlock()
 
   const [filters, setFilters] = useState<MapFilterValues>({
@@ -198,6 +200,7 @@ export function MapView() {
     <div className="relative h-full w-full">
       <MapContainer
         parcels={filtered}
+        blocks={blocks}
         adaCoords={adaCoords}
         drawMode={mode === 'draw-ada' || mode === 'draw-parcel'}
         drawLabel={mode === 'draw-ada' ? 'Ada sınırını çizin' : 'Parsel sınırını çizin'}

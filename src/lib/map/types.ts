@@ -50,41 +50,76 @@ export const DEFAULT_MAP_OPTIONS: MapOptions = {
 export const PARCEL_ZOOM_THRESHOLD = 15
 
 export const POLYGON_STYLES: Record<string, PolygonStyle> = {
+  // Parcel styles (zIndex: 2 — renders above block polygons)
   grey: {
-    fillColor: '#9ca3af',
+    // Default parcel: no data yet → orange
+    fillColor: '#f97316',
     fillOpacity: 0.35,
-    strokeColor: '#6b7280',
+    strokeColor: '#ea580c',
     strokeWeight: 2,
+    zIndex: 2,
   },
   green: {
     fillColor: '#22c55e',
     fillOpacity: 0.4,
     strokeColor: '#16a34a',
     strokeWeight: 2,
+    zIndex: 2,
   },
   orange: {
     fillColor: '#f97316',
     fillOpacity: 0.4,
     strokeColor: '#ea580c',
     strokeWeight: 2,
+    zIndex: 2,
   },
+
+  // Block / Ada styles (zIndex: 1 — renders below parcel polygons)
+  block_default: {
+    // Default ada: no data yet → lacivert (navy)
+    fillColor: '#1E3A8A',
+    fillOpacity: 0.12,
+    strokeColor: '#1E3A8A',
+    strokeWeight: 2,
+    zIndex: 1,
+  },
+  block_green: {
+    fillColor: '#22c55e',
+    fillOpacity: 0.15,
+    strokeColor: '#16a34a',
+    strokeWeight: 2,
+    zIndex: 1,
+  },
+  block_orange: {
+    fillColor: '#f97316',
+    fillOpacity: 0.15,
+    strokeColor: '#ea580c',
+    strokeWeight: 2,
+    zIndex: 1,
+  },
+
+  // Misc
   drawing: {
     fillColor: '#3b82f6',
     fillOpacity: 0.2,
     strokeColor: '#2563eb',
     strokeWeight: 2,
+    zIndex: 3,
   },
   selected: {
     fillColor: '#8b5cf6',
     fillOpacity: 0.4,
     strokeColor: '#7c3aed',
     strokeWeight: 3,
+    zIndex: 4,
   },
   ada: {
+    // Active drawing guide for ada boundary
     fillColor: '#3b82f6',
-    fillOpacity: 0.2,
+    fillOpacity: 0.15,
     strokeColor: '#2563eb',
-    strokeWeight: 4,
+    strokeWeight: 3,
     clickable: false,
+    zIndex: 5,
   },
 }

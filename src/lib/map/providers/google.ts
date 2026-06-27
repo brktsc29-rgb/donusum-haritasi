@@ -136,6 +136,7 @@ export class GoogleMapsProvider implements MapProvider {
       strokeColor: style.strokeColor,
       strokeWeight: style.strokeWeight,
       clickable: style.clickable !== false,
+      zIndex: style.zIndex ?? 1,
     })
     polygon.setMap(this.map)
     this.polygons.set(id, polygon)

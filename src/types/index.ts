@@ -195,15 +195,38 @@ export interface PolygonStyle {
   strokeColor: string
   strokeWeight: number
   clickable?: boolean
+  zIndex?: number
+}
+
+export interface BlockMapFeature {
+  id: string
+  block_no: string
+  neighborhood_id: string
+  neighborhood_name: string
+  district: string
+  coordinates: LatLng[]
+  center: LatLng | null
+  parcel_count: number
+  total_units: number
+  apartment_count: number
+  shop_count: number
+  positive_count: number
+  negative_count: number
+  undecided_count: number
+  positive_ratio: number | null
+  color_status: ColorStatus
 }
 
 export interface ParcelMapFeature {
   id: string
   parcel_no: string
+  block_id: string
   block_no: string
   neighborhood_name: string
   color_status: ColorStatus
   total_units: number
+  apartment_count: number
+  shop_count: number
   positive_count: number
   negative_count: number
   undecided_count: number

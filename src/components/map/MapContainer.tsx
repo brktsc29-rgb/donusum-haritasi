@@ -5,14 +5,17 @@ import { Undo2, CheckCircle2, X, Loader2 } from 'lucide-react'
 import { GoogleMapsProvider } from '@/lib/map/providers/google'
 import { PARCEL_ZOOM_THRESHOLD, POLYGON_STYLES, DEFAULT_MAP_OPTIONS } from '@/lib/map/types'
 import type { MapProvider } from '@/lib/map/types'
-import type { ParcelMapFeature, LatLng } from '@/types'
+import type { ParcelMapFeature, BlockMapFeature, LatLng } from '@/types'
 import { colorStatusToHex } from '@/lib/utils'
 import { ParcelInfoCard } from './ParcelInfoCard'
+import { BlockInfoCard } from './BlockInfoCard'
 import { Button } from '@/components/ui/button'
 
 interface Props {
   parcels: ParcelMapFeature[]
+  blocks?: BlockMapFeature[]
   onParcelClick?: (parcel: ParcelMapFeature) => void
+  onBlockClick?: (block: BlockMapFeature) => void
   drawMode?: boolean
   drawLabel?: string
   adaCoords?: LatLng[]
@@ -22,7 +25,9 @@ interface Props {
 
 export function MapContainer({
   parcels,
+  blocks = [],
   onParcelClick,
+  onBlockClick,
   drawMode = false,
   drawLabel,
   adaCoords,
@@ -32,16 +37,14 @@ export function MapContainer({
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const providerRef = useRef<MapProvider | null>(null)
-  // Geocoder stored in a ref so it survives search-input remounts
   const geocoderRef = useRef<google.maps.Geocoder | null>(null)
   const adaFittedRef = useRef(false)
-  // Mirror adaCoords to a ref so the parcels effect can re-add it after
-  // clearPolygons() without adding adaCoords to that effect's dep array
   const adaCoordsRef = useRef(adaCoords)
   adaCoordsRef.current = adaCoords
 
   const [zoom, setZoom] = useState(DEFAULT_MAP_OPTIONS.zoom)
   const [selectedParcel, setSelectedParcel] = useState<ParcelMapFeature | null>(null)
+  const [selectedBlock, setSelectedBlock] = useState<BlockMapFeature | null>(null)
   const [pointCount, setPointCount] = useState(0)
   const [searching, setSearching] = useState(false)
   const [searchMsg, setSearchMsg] = useState<string | null>(null)
@@ -67,7 +70,7 @@ export function MapContainer({
     }
   }, [])
 
-  // Address search — callback API is more reliable than Promise across browser/Maps versions
+  // Address search
   const handleSearch = useCallback(() => {
     const q = searchRef.current?.value.trim()
     if (!q) return
@@ -100,7 +103,7 @@ export function MapContainer({
     )
   }, [])
 
-  // When a parcel is selected, reverse-geocode its centre and fill the search bar
+  // Parcel click → reverse geocode → fill search bar
   useEffect(() => {
     if (!selectedParcel?.center || !searchRef.current) return
     if (!geocoderRef.current) return
@@ -115,7 +118,7 @@ export function MapContainer({
     )
   }, [selectedParcel])
 
-  // Render parcels or block markers
+  // Render blocks and parcels
   useEffect(() => {
     const provider = providerRef.current
     if (!provider) return
@@ -123,6 +126,30 @@ export function MapContainer({
     provider.clearPolygons()
     provider.clearMarkers()
 
+    // 1. Block polygons (ada layer — zIndex 1, always shown)
+    blocks.forEach((block) => {
+      if (block.coordinates.length >= 3) {
+        const styleKey =
+          block.color_status === 'green' ? 'block_green'
+          : block.color_status === 'orange' ? 'block_orange'
+          : 'block_default'
+        provider.addPolygon(`block-${block.id}`, block.coordinates, POLYGON_STYLES[styleKey])
+        provider.onPolygonClick(`block-${block.id}`, () => {
+          setSelectedBlock(block)
+          setSelectedParcel(null)
+          if (onBlockClick) onBlockClick(block)
+        })
+      } else if (block.center && !showParcels) {
+        // Fallback marker when no boundary data and zoomed out
+        const color =
+          block.color_status === 'green' ? '#22c55e'
+          : block.color_status === 'orange' ? '#f97316'
+          : '#1E3A8A'
+        provider.addMarker(`block-m-${block.id}`, block.center, block.block_no, color)
+      }
+    })
+
+    // 2. Parcel polygons (parcel layer — zIndex 2, shown when zoomed in)
     if (showParcels) {
       parcels.forEach((parcel) => {
         if (parcel.coordinates.length < 3) {
@@ -131,42 +158,46 @@ export function MapContainer({
           }
           return
         }
-        const style = POLYGON_STYLES[parcel.color_status] ?? POLYGON_STYLES.grey
-        provider.addPolygon(parcel.id, parcel.coordinates, style)
+        const styleKey = parcel.color_status === 'grey' ? 'grey'
+          : parcel.color_status === 'green' ? 'green'
+          : 'orange'
+        provider.addPolygon(parcel.id, parcel.coordinates, POLYGON_STYLES[styleKey])
         provider.onPolygonClick(parcel.id, () => {
           setSelectedParcel(parcel)
+          setSelectedBlock(null)
           if (onParcelClick) onParcelClick(parcel)
         })
       })
     } else {
+      // Zoomed out: block-level summary markers (only for blocks without boundary)
+      const blocksWithBoundary = new Set(blocks.filter(b => b.coordinates.length >= 3).map(b => b.id))
       const blockMap = new Map<string, ParcelMapFeature[]>()
       parcels.forEach((p) => {
-        const key = p.block_no
+        if (blocksWithBoundary.has(p.block_id)) return
+        const key = p.block_id || p.block_no
         if (!blockMap.has(key)) blockMap.set(key, [])
         blockMap.get(key)!.push(p)
       })
-      blockMap.forEach((blockParcels, blockNo) => {
+      blockMap.forEach((blockParcels) => {
         const totalUnits = blockParcels.reduce((s, p) => s + p.total_units, 0)
         const totalPos = blockParcels.reduce((s, p) => s + p.positive_count, 0)
         const ratio = totalUnits > 0 ? totalPos / totalUnits : null
-        const color = ratio === null ? '#9ca3af' : ratio >= 0.5 ? '#22c55e' : '#f97316'
+        const color = ratio === null ? '#1E3A8A' : ratio >= 0.5 ? '#22c55e' : '#f97316'
         const withCenter = blockParcels.find((p) => p.center)
         if (withCenter?.center) {
-          provider.addMarker(`block-${blockNo}`, withCenter.center, blockNo, color)
+          provider.addMarker(`bm-${withCenter.block_id}`, withCenter.center, withCenter.block_no, color)
         }
       })
     }
 
-    // Re-add ada after clearing — read from ref to avoid adding adaCoords to deps
+    // 3. Re-add ada drawing guide polygon on top
     const ada = adaCoordsRef.current
     if (ada && ada.length >= 3) {
       provider.addPolygon('__ada__', ada, POLYGON_STYLES.ada)
     }
-  }, [parcels, showParcels, onParcelClick])
+  }, [blocks, parcels, showParcels, onParcelClick, onBlockClick])
 
-  // Ada overlay managed in its own effect so adaCoords changes update it
-  // independently of parcels. Declared after the parcels effect so React runs
-  // it last — the ada polygon always ends up on top after any clearPolygons().
+  // Ada drawing guide managed separately so it updates independently
   useEffect(() => {
     const provider = providerRef.current
     if (!provider) return
@@ -211,8 +242,7 @@ export function MapContainer({
     <div className="relative w-full h-full">
       <div ref={containerRef} className="map-container w-full h-full" />
 
-      {/* Search bar — hidden during draw; uses React onKeyDown (not a native DOM
-          listener) so it survives being unmounted/remounted when drawMode toggles */}
+      {/* Search bar */}
       {!drawMode && (
         <div className="absolute top-3 left-3 right-14 z-10">
           <div className="relative">
@@ -244,14 +274,14 @@ export function MapContainer({
         </div>
       )}
 
-      {/* Draw mode top label + point count */}
+      {/* Draw mode label */}
       {drawMode && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-4 py-2 rounded-full shadow-lg z-10 pointer-events-none whitespace-nowrap">
           {drawLabel ?? 'Haritaya dokunarak köşe ekleyin'}{pointCount > 0 ? ` • ${pointCount} nokta` : ''}
         </div>
       )}
 
-      {/* Mobile draw controls */}
+      {/* Draw controls */}
       {drawMode && (
         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-3 z-10 px-4">
           <Button
@@ -285,7 +315,12 @@ export function MapContainer({
         </div>
       )}
 
-      {/* Parcel info card */}
+      {/* Block info card (left side) */}
+      {selectedBlock && !drawMode && (
+        <BlockInfoCard block={selectedBlock} onClose={() => setSelectedBlock(null)} />
+      )}
+
+      {/* Parcel info card (right side) */}
       {selectedParcel && !drawMode && (
         <ParcelInfoCard parcel={selectedParcel} onClose={() => setSelectedParcel(null)} />
       )}
