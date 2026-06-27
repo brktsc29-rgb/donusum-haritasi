@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Map as MapIcon, PenSquare, X, Loader2 } from 'lucide-react'
+import { Plus, Loader2, Pencil, X, MapPin } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useMapParcels } from '@/hooks/useParcels'
 import { useNeighborhoods, useOrCreateBlock } from '@/hooks/useNeighborhoods'
 import { Button } from '@/components/ui/button'
@@ -40,8 +40,9 @@ export function MapView() {
     colorStatus: null,
     decisionStatus: null,
   })
+
   const [mode, setMode] = useState<MapMode>('view')
-  const [adaCoords, setAdaCoords] = useState<LatLng[] | null>(null)
+  const [adaCoords, setAdaCoords] = useState<LatLng[] | undefined>()
   const [adaNeighborhoodId, setAdaNeighborhoodId] = useState('')
   const [adaBlockNo, setAdaBlockNo] = useState('')
   const [adaBlockId, setAdaBlockId] = useState<string | null>(null)
@@ -60,16 +61,24 @@ export function MapView() {
     setMode('ada-info')
   }, [])
 
+  const handleAdaDrawCancel = useCallback(() => {
+    setAdaCoords(undefined)
+    setMode('view')
+  }, [])
+
   const handleSaveAda = useCallback(async () => {
-    if (!adaNeighborhoodId || !adaBlockNo.trim()) return
+    if (!adaNeighborhoodId || !adaBlockNo.trim()) {
+      setAdaError('Mahalle ve ada no zorunludur')
+      return
+    }
     setSavingAda(true)
     setAdaError(null)
     try {
       const block = await orCreateBlock(adaNeighborhoodId, adaBlockNo.trim())
       setAdaBlockId(block.id)
       setMode('ada-drawn')
-    } catch {
-      setAdaError('Ada kaydedilemedi, tekrar deneyin.')
+    } catch (err) {
+      setAdaError(err instanceof Error ? err.message : 'Kayıt hatası')
     } finally {
       setSavingAda(false)
     }
@@ -83,22 +92,24 @@ export function MapView() {
       neighborhoodId: adaNeighborhoodId,
       neighborhoodName: neighborhood?.name ?? '',
       parcelCoords: coords,
-      adaCoords,
+      adaCoords: adaCoords ?? [],
     }))
     router.push('/parcels/new?fromMap=1')
   }, [adaBlockId, adaBlockNo, adaNeighborhoodId, adaCoords, neighborhoods, router])
 
-  const handleDrawCancel = useCallback(() => {
-    setMode((prev) => (prev === 'draw-ada' ? 'view' : 'ada-drawn'))
+  const handleParcelDrawCancel = useCallback(() => {
+    setMode('ada-drawn')
   }, [])
 
-  const resetAda = useCallback(() => {
-    setAdaCoords(null)
+  const handleResetAda = useCallback(() => {
+    setAdaCoords(undefined)
     setAdaBlockId(null)
-    setAdaBlockNo('')
     setAdaNeighborhoodId('')
+    setAdaBlockNo('')
     setMode('view')
   }, [])
+
+  const selectedNeighborhoodName = neighborhoods.find((n) => n.id === adaNeighborhoodId)?.name
 
   if (isLoading) {
     return (
@@ -108,108 +119,119 @@ export function MapView() {
     )
   }
 
-  const isDrawing = mode === 'draw-ada' || mode === 'draw-parcel'
-
   return (
     <div className="relative h-full w-full">
       <MapContainer
         parcels={filtered}
-        adaCoords={adaCoords ?? undefined}
-        drawMode={isDrawing}
-        drawLabel={
-          mode === 'draw-ada'
-            ? 'Ada sınırını çizin (4 taraftaki yolları köşe alın)'
-            : 'Parsel sınırını çizin'
-        }
+        adaCoords={adaCoords}
+        drawMode={mode === 'draw-ada' || mode === 'draw-parcel'}
+        drawLabel={mode === 'draw-ada' ? 'Ada sınırını çizin' : 'Parsel sınırını çizin'}
         onDrawComplete={mode === 'draw-ada' ? handleAdaDrawComplete : handleParcelDrawComplete}
-        onDrawCancel={handleDrawCancel}
+        onDrawCancel={mode === 'draw-ada' ? handleAdaDrawCancel : handleParcelDrawCancel}
       />
 
-      {!isDrawing && mode !== 'ada-info' && (
-        <MapFilters value={filters} onChange={setFilters} />
+      {/* Filters — hidden during draw */}
+      {mode === 'view' && <MapFilters value={filters} onChange={setFilters} />}
+
+      {/* view mode FAB area */}
+      {mode === 'view' && (
+        <div className="absolute bottom-6 right-4 flex flex-col gap-2 md:bottom-8 md:right-6">
+          <Button
+            size="lg"
+            variant="outline"
+            className="shadow-xl gap-2 bg-white"
+            onClick={() => setMode('draw-ada')}
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="hidden sm:inline">Ada Çiz</span>
+          </Button>
+          <Button
+            size="lg"
+            className="shadow-xl gap-2"
+            onClick={() => router.push('/parcels/new')}
+          >
+            <Plus className="h-5 w-5" />
+            <span className="hidden sm:inline">Yeni Parsel</span>
+          </Button>
+        </div>
       )}
 
-      {/* Ada bilgisi formu — harita üzerinde alt sheet */}
+      {/* ada-info bottom sheet: ask neighborhood + ada no */}
       {mode === 'ada-info' && (
-        <div className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t rounded-t-2xl p-5 shadow-2xl">
-          <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-4" />
-          <h3 className="font-semibold text-base mb-4">Ada Bilgisi</h3>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Mahalle *</Label>
-              <Select value={adaNeighborhoodId} onValueChange={setAdaNeighborhoodId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Mahalle seçin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {neighborhoods.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Ada No *</Label>
-              <Input
-                value={adaBlockNo}
-                onChange={(e) => setAdaBlockNo(e.target.value)}
-                placeholder="Örn: 123"
-                inputMode="numeric"
-              />
-            </div>
-            {adaError && (
-              <p className="text-xs text-destructive">{adaError}</p>
-            )}
-            <div className="flex gap-2 pt-1">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={resetAda}
-              >
-                İptal
-              </Button>
-              <Button
-                className="flex-1 gap-2"
-                disabled={!adaNeighborhoodId || !adaBlockNo.trim() || savingAda}
-                onClick={handleSaveAda}
-              >
-                {savingAda && <Loader2 className="h-4 w-4 animate-spin" />}
-                Kaydet
-              </Button>
-            </div>
+        <div className="absolute inset-x-0 bottom-0 bg-white rounded-t-2xl shadow-2xl z-20 p-5 space-y-4">
+          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-2" />
+          <h2 className="font-semibold text-base flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-blue-600" />
+            Ada Bilgileri
+          </h2>
+
+          <div className="space-y-1.5">
+            <Label>Mahalle *</Label>
+            <Select value={adaNeighborhoodId} onValueChange={setAdaNeighborhoodId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Mahalle seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                {neighborhoods.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Ada No *</Label>
+            <Input
+              value={adaBlockNo}
+              onChange={(e) => setAdaBlockNo(e.target.value)}
+              placeholder="Örn: 245"
+            />
+          </div>
+
+          {adaError && (
+            <p className="text-sm text-destructive">{adaError}</p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" className="flex-1" onClick={handleAdaDrawCancel}>
+              <X className="h-4 w-4 mr-1" />
+              İptal
+            </Button>
+            <Button className="flex-1" onClick={handleSaveAda} disabled={savingAda}>
+              {savingAda ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Kaydet
+            </Button>
           </div>
         </div>
       )}
 
-      {/* FABs */}
-      <div className="absolute bottom-6 right-4 flex flex-col items-end gap-3 z-10">
-        {mode === 'view' && (
-          <Button size="lg" className="shadow-xl gap-2" onClick={() => setMode('draw-ada')}>
-            <MapIcon className="h-5 w-5" />
-            Ada Çiz
-          </Button>
-        )}
-
-        {mode === 'ada-drawn' && (
-          <>
-            <div className="bg-card border rounded-lg px-3 py-1.5 text-xs text-muted-foreground shadow">
-              {neighborhoods.find((n) => n.id === adaNeighborhoodId)?.name} • Ada {adaBlockNo}
-            </div>
+      {/* ada-drawn state: show badge + draw parcel button */}
+      {mode === 'ada-drawn' && (
+        <div className="absolute bottom-6 left-4 right-4 flex flex-col gap-2 md:bottom-8 md:left-6 md:right-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-800 flex items-center gap-2">
+            <MapPin className="h-4 w-4 shrink-0" />
+            <span className="font-medium">{selectedNeighborhoodName} • Ada {adaBlockNo}</span>
+          </div>
+          <div className="flex gap-2">
             <Button
               size="lg"
-              className="shadow-xl gap-2 bg-green-600 hover:bg-green-700 text-white"
+              className="flex-1 shadow-xl gap-2 bg-green-600 hover:bg-green-700"
               onClick={() => setMode('draw-parcel')}
             >
-              <PenSquare className="h-5 w-5" />
+              <Pencil className="h-4 w-4" />
               Parsel Çiz
             </Button>
-            <Button size="lg" variant="outline" className="shadow-xl gap-2 bg-white" onClick={resetAda}>
+            <Button
+              size="lg"
+              variant="outline"
+              className="shadow-xl bg-white"
+              onClick={handleResetAda}
+            >
               <X className="h-4 w-4" />
-              İptal
             </Button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

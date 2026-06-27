@@ -16,7 +16,10 @@ const loadCallbacks: Array<() => void> = []
 
 function loadGoogleMapsScript(): Promise<void> {
   return new Promise((resolve) => {
-    if (googleMapsLoaded) { resolve(); return }
+    if (googleMapsLoaded) {
+      resolve()
+      return
+    }
     loadCallbacks.push(resolve)
     if (googleMapsLoading) return
     googleMapsLoading = true
@@ -44,6 +47,7 @@ export class GoogleMapsProvider implements MapProvider {
   private mapClickListener: google.maps.MapsEventListener | null = null
   private zoomListener: google.maps.MapsEventListener | null = null
 
+  // Draw mode state
   private isDrawing = false
   private drawPoints: LatLng[] = []
   private drawPolyline: google.maps.Polyline | null = null
@@ -55,6 +59,7 @@ export class GoogleMapsProvider implements MapProvider {
 
   async initialize(container: HTMLElement, options: MapOptions): Promise<void> {
     await loadGoogleMapsScript()
+
     this.map = new google.maps.Map(container, {
       center: options.center,
       zoom: options.zoom,
@@ -65,28 +70,25 @@ export class GoogleMapsProvider implements MapProvider {
         position: google.maps.ControlPosition.TOP_RIGHT,
       },
       streetViewControl: false,
-      fullscreenControl: false,
+      fullscreenControl: true,
       zoomControl: true,
-      zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
+      zoomControlOptions: {
+        position: google.maps.ControlPosition.RIGHT_CENTER,
+      },
       gestureHandling: 'greedy',
       disableDoubleClickZoom: true,
     })
-  }
 
-  initSearchBox(input: HTMLInputElement, onPlace: (latlng: LatLng, name: string) => void): void {
-    if (!this.map) return
-    const geocoder = new google.maps.Geocoder()
-    const search = () => {
-      const q = input.value.trim()
-      if (!q) return
-      geocoder.geocode({ address: q, region: 'tr' }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
-          const loc = results[0].geometry.location
-          onPlace({ lat: loc.lat(), lng: loc.lng() }, results[0].formatted_address ?? q)
-        }
-      })
+    // Center on user's GPS location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          this.map?.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+          this.map?.setZoom(17)
+        },
+        () => { /* denied or unavailable — keep default center */ }
+      )
     }
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); search() } })
   }
 
   destroy(): void {
@@ -98,15 +100,22 @@ export class GoogleMapsProvider implements MapProvider {
     this.map = null
   }
 
-  setCenter(latlng: LatLng): void { this.map?.setCenter(latlng) }
-  setZoom(zoom: number): void { this.map?.setZoom(zoom) }
+  setCenter(latlng: LatLng): void {
+    this.map?.setCenter(latlng)
+  }
+
+  setZoom(zoom: number): void {
+    this.map?.setZoom(zoom)
+  }
 
   fitBounds(bounds: BoundingBox): void {
     if (!this.map) return
-    this.map.fitBounds(new google.maps.LatLngBounds(
-      { lat: bounds.south, lng: bounds.west },
-      { lat: bounds.north, lng: bounds.east }
-    ))
+    this.map.fitBounds(
+      new google.maps.LatLngBounds(
+        { lat: bounds.south, lng: bounds.west },
+        { lat: bounds.north, lng: bounds.east }
+      )
+    )
   }
 
   fitCoords(coords: LatLng[]): void {
@@ -119,6 +128,7 @@ export class GoogleMapsProvider implements MapProvider {
   addPolygon(id: string, coords: LatLng[], style: PolygonStyle): void {
     if (!this.map) return
     this.removePolygon(id)
+
     const polygon = new google.maps.Polygon({
       paths: coords,
       fillColor: style.fillColor,
@@ -132,45 +142,58 @@ export class GoogleMapsProvider implements MapProvider {
   }
 
   updatePolygon(id: string, style: PolygonStyle): void {
-    this.polygons.get(id)?.setOptions({
+    const polygon = this.polygons.get(id)
+    if (!polygon) return
+    polygon.setOptions({
       fillColor: style.fillColor,
       fillOpacity: style.fillOpacity,
       strokeColor: style.strokeColor,
       strokeWeight: style.strokeWeight,
-      clickable: style.clickable !== false,
     })
   }
 
   updatePolygonCoords(id: string, coords: LatLng[]): void {
-    this.polygons.get(id)?.setPaths(coords)
+    const polygon = this.polygons.get(id)
+    if (!polygon) return
+    polygon.setPaths(coords)
   }
 
   removePolygon(id: string): void {
     const polygon = this.polygons.get(id)
     if (!polygon) return
     const listener = this.polygonClickListeners.get(id)
-    if (listener) { google.maps.event.removeListener(listener); this.polygonClickListeners.delete(id) }
+    if (listener) {
+      google.maps.event.removeListener(listener)
+      this.polygonClickListeners.delete(id)
+    }
     polygon.setMap(null)
     this.polygons.delete(id)
   }
 
-  clearPolygons(): void { this.polygons.forEach((_, id) => this.removePolygon(id)) }
+  clearPolygons(): void {
+    this.polygons.forEach((_, id) => this.removePolygon(id))
+  }
 
   addMarker(id: string, latlng: LatLng, label?: string, color?: string): void {
     if (!this.map) return
     this.removeMarker(id)
+
     const marker = new google.maps.Marker({
       position: latlng,
       map: this.map,
-      label: label ? { text: label, color: '#fff', fontWeight: 'bold', fontSize: '12px' } : undefined,
-      icon: color ? {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 16,
-        fillColor: color,
-        fillOpacity: 0.9,
-        strokeColor: '#fff',
-        strokeWeight: 2,
-      } : undefined,
+      label: label
+        ? { text: label, color: '#fff', fontWeight: 'bold', fontSize: '12px' }
+        : undefined,
+      icon: color
+        ? {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 16,
+            fillColor: color,
+            fillOpacity: 0.9,
+            strokeColor: '#fff',
+            strokeWeight: 2,
+          }
+        : undefined,
     })
     this.markers.set(id, marker)
   }
@@ -179,14 +202,16 @@ export class GoogleMapsProvider implements MapProvider {
     const marker = this.markers.get(id)
     if (!marker) return
     marker.setPosition(latlng)
-    if (color) marker.setIcon({
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: 16,
-      fillColor: color,
-      fillOpacity: 0.9,
-      strokeColor: '#fff',
-      strokeWeight: 2,
-    })
+    if (color) {
+      marker.setIcon({
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 16,
+        fillColor: color,
+        fillOpacity: 0.9,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+      })
+    }
   }
 
   removeMarker(id: string): void {
@@ -196,14 +221,17 @@ export class GoogleMapsProvider implements MapProvider {
     this.markers.delete(id)
   }
 
-  clearMarkers(): void { this.markers.forEach((_, id) => this.removeMarker(id)) }
+  clearMarkers(): void {
+    this.markers.forEach((_, id) => this.removeMarker(id))
+  }
 
   onPolygonClick(id: string, handler: () => void): void {
     const polygon = this.polygons.get(id)
     if (!polygon) return
     const existing = this.polygonClickListeners.get(id)
     if (existing) google.maps.event.removeListener(existing)
-    this.polygonClickListeners.set(id, polygon.addListener('click', handler))
+    const listener = polygon.addListener('click', handler)
+    this.polygonClickListeners.set(id, listener)
   }
 
   onClick(handler: (latlng: LatLng) => void): void {
@@ -223,6 +251,27 @@ export class GoogleMapsProvider implements MapProvider {
     })
   }
 
+  initSearchBox(input: HTMLInputElement, onPlace: (latlng: LatLng, name: string) => void): void {
+    if (!this.map) return
+    const geocoder = new google.maps.Geocoder()
+    const search = () => {
+      const q = input.value.trim()
+      if (!q) return
+      geocoder.geocode({ address: q, region: 'tr' }, (results, status) => {
+        if (status === 'OK' && results?.[0]) {
+          const loc = results[0].geometry.location
+          onPlace({ lat: loc.lat(), lng: loc.lng() }, results[0].formatted_address ?? q)
+        }
+      })
+    }
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        search()
+      }
+    })
+  }
+
   enableDrawMode(onComplete: (coords: LatLng[]) => void, onPointsChange?: (count: number) => void): void {
     if (!this.map) return
     this.onDrawComplete = onComplete
@@ -237,65 +286,93 @@ export class GoogleMapsProvider implements MapProvider {
       map: this.map,
     })
 
-    this.drawClickListener = this.map.addListener('click', (e: google.maps.MapMouseEvent) => {
-      if (!this.isDrawing || !e.latLng) return
-      const point: LatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() }
-      this.drawPoints.push(point)
-      const dot = new google.maps.Marker({
-        position: point,
-        map: this.map!,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 6,
-          fillColor: '#2563eb',
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
-        },
-        clickable: false,
-      })
-      this.drawMarkers.push(dot)
-      this.drawPolyline?.setPath(this.drawPoints.map((p) => new google.maps.LatLng(p.lat, p.lng)))
-      this.onPointsChange?.(this.drawPoints.length)
-    })
+    this.drawClickListener = this.map.addListener(
+      'click',
+      (e: google.maps.MapMouseEvent) => {
+        if (!this.isDrawing || !e.latLng) return
+        const point: LatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() }
+        this.drawPoints.push(point)
+        this.onPointsChange?.(this.drawPoints.length)
 
-    this.drawDblClickListener = this.map.addListener('dblclick', (e: google.maps.MapMouseEvent) => {
-      if (!this.isDrawing || this.drawPoints.length < 3) return
-      e.stop?.()
-      this.finishDraw()
-    })
+        const dot = new google.maps.Marker({
+          position: point,
+          map: this.map!,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 5,
+            fillColor: '#2563eb',
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 1,
+          },
+          clickable: false,
+        })
+        this.drawMarkers.push(dot)
+
+        const path = this.drawPoints.map((p) => new google.maps.LatLng(p.lat, p.lng))
+        this.drawPolyline?.setPath(path)
+      }
+    )
+
+    // Double-click to finish
+    this.drawDblClickListener = this.map.addListener(
+      'dblclick',
+      (e: google.maps.MapMouseEvent) => {
+        if (!this.isDrawing || this.drawPoints.length < 3) return
+        e.stop?.()
+        this.finishDraw()
+      }
+    )
   }
 
   finishDrawNow(): void {
-    if (this.drawPoints.length >= 3) this.finishDraw()
+    if (this.drawPoints.length >= 3) {
+      this.finishDraw()
+    }
   }
 
   undoLastDrawPoint(): void {
-    if (this.drawPoints.length === 0) return
+    if (!this.isDrawing || this.drawPoints.length === 0) return
     this.drawPoints.pop()
+    this.onPointsChange?.(this.drawPoints.length)
     const lastMarker = this.drawMarkers.pop()
     lastMarker?.setMap(null)
-    this.drawPolyline?.setPath(this.drawPoints.map((p) => new google.maps.LatLng(p.lat, p.lng)))
-    this.onPointsChange?.(this.drawPoints.length)
+    const path = this.drawPoints.map((p) => new google.maps.LatLng(p.lat, p.lng))
+    this.drawPolyline?.setPath(path)
   }
 
   private finishDraw(): void {
     const coords = [...this.drawPoints]
-    const onComplete = this.onDrawComplete
     this.disableDrawMode()
-    if (coords.length >= 3 && onComplete) onComplete(coords)
+    if (coords.length >= 3 && this.onDrawComplete) {
+      this.onDrawComplete(coords)
+    }
+    this.onDrawComplete = null
+    this.onPointsChange = null
   }
 
   disableDrawMode(): void {
     this.isDrawing = false
     this.drawPoints = []
-    this.onDrawComplete = null
     this.onPointsChange = null
-    if (this.drawClickListener) { google.maps.event.removeListener(this.drawClickListener); this.drawClickListener = null }
-    if (this.drawDblClickListener) { google.maps.event.removeListener(this.drawDblClickListener); this.drawDblClickListener = null }
-    if (this.drawPolyline) { this.drawPolyline.setMap(null); this.drawPolyline = null }
+
+    if (this.drawClickListener) {
+      google.maps.event.removeListener(this.drawClickListener)
+      this.drawClickListener = null
+    }
+    if (this.drawDblClickListener) {
+      google.maps.event.removeListener(this.drawDblClickListener)
+      this.drawDblClickListener = null
+    }
+    if (this.drawPolyline) {
+      this.drawPolyline.setMap(null)
+      this.drawPolyline = null
+    }
     this.drawMarkers.forEach((m) => m.setMap(null))
     this.drawMarkers = []
-    if (this.map) this.map.setOptions({ draggableCursor: '', disableDoubleClickZoom: false })
+
+    if (this.map) {
+      this.map.setOptions({ draggableCursor: '', disableDoubleClickZoom: false })
+    }
   }
 }

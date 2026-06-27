@@ -95,6 +95,7 @@ export interface Unit {
   land_share_denominator: number | null
   decision_status: DecisionStatus | null
   notes: string | null
+  // Personal data — stripped for company users without permission
   owner_name: string | null
   owner_phone: string | null
   contact_name: string | null
@@ -109,6 +110,7 @@ export interface Unit {
   updated_at: string
 }
 
+// Unit with personal data stripped (for company users)
 export type UnitPublic = Omit<
   Unit,
   'owner_name' | 'owner_phone' | 'contact_name' | 'contact_phone' | 'notes' | 'consent_given_by'
@@ -174,6 +176,7 @@ export interface AuditLog {
   profile?: Profile
 }
 
+// Map types
 export interface LatLng {
   lat: number
   lng: number

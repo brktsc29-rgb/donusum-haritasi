@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
-import { Loader2, MapPin, Pencil, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { Loader2, MapPin, Pencil, RefreshCw } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { parcelSchema, type ParcelInput } from '@/lib/validations'
 import { generateAutoParcelCode } from '@/lib/utils'
@@ -77,40 +77,46 @@ export function ParcelForm() {
     },
   })
 
-  const neighborhoodId = watch('neighborhood_id')
-  const { data: blocks = [] } = useBlocks(neighborhoodId ?? null)
-  const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId)
-
-  // Read pre-filled data from map flow
+  // Load fromMap data from sessionStorage
   useEffect(() => {
     const raw = sessionStorage.getItem('pendingParcelDraw')
     if (!raw) return
+    sessionStorage.removeItem('pendingParcelDraw')
     try {
-      const data = JSON.parse(raw) as FromMapData
-      sessionStorage.removeItem('pendingParcelDraw')
-      if (data.parcelCoords?.length >= 3) {
-        setDrawnCoords(data.parcelCoords)
-        setFromMap(data)
-        setValue('neighborhood_id', data.neighborhoodId)
-        setValue('block_id', data.blockNo)
-      }
-    } catch {}
+      const data: FromMapData = JSON.parse(raw)
+      setFromMap(data)
+      setDrawnCoords(data.parcelCoords)
+      setValue('neighborhood_id', data.neighborhoodId)
+      setValue('block_id', data.blockId)
+    } catch {
+      // ignore parse errors
+    }
   }, [setValue])
 
+  const neighborhoodId = watch('neighborhood_id')
+  const { data: blocks = [] } = useBlocks(fromMap ? null : neighborhoodId ?? null)
+
+  const selectedNeighborhood = neighborhoods.find((n) => n.id === neighborhoodId)
+
   const generateCode = useCallback(async () => {
-    if (!selectedNeighborhood) return
+    const neighId = fromMap?.neighborhoodId ?? neighborhoodId
+    const neigh = fromMap
+      ? { name: fromMap.neighborhoodName }
+      : selectedNeighborhood
+    if (!neigh || !neighId) return
     const supabase = createClient()
     const { count } = await supabase
       .from('parcels')
       .select('*', { count: 'exact', head: true })
-      .eq('neighborhood_id', neighborhoodId)
+      .eq('neighborhood_id', neighId)
       .eq('is_auto_code', true)
+
     const seq = (count ?? 0) + 1
-    const code = generateAutoParcelCode(selectedNeighborhood.name, seq)
+    const code = generateAutoParcelCode(neigh.name, seq)
     setValue('parcel_no', code)
     setValue('is_auto_code', true)
     setAutoCode(true)
-  }, [selectedNeighborhood, neighborhoodId, setValue])
+  }, [fromMap, selectedNeighborhood, neighborhoodId, setValue])
 
   const onSubmit = async (data: ParcelInput) => {
     setServerError(null)
@@ -118,7 +124,9 @@ export function ParcelForm() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
 
-      const block = await orCreateBlock(data.neighborhood_id, data.block_id)
+      const block = fromMap
+        ? { id: fromMap.blockId }
+        : await orCreateBlock(data.neighborhood_id, data.block_id)
 
       const boundaryGeoJson = drawnCoords.length >= 3
         ? coordsToGeoJsonPolygon(drawnCoords)
@@ -145,13 +153,20 @@ export function ParcelForm() {
         centerGeoJson,
       })
 
-      const units: Array<{ parcel_id: string; unit_type: 'apartment' | 'shop'; unit_name: string; created_by: string | null }> = []
+      const units: Array<{
+        parcel_id: string
+        unit_type: 'apartment' | 'shop'
+        unit_name: string
+        created_by: string | null
+      }> = []
+
       for (let i = 1; i <= data.apartment_count; i++) {
         units.push({ parcel_id: parcel.id, unit_type: 'apartment', unit_name: `Daire ${i}`, created_by: user?.id ?? null })
       }
       for (let i = 1; i <= data.shop_count; i++) {
         units.push({ parcel_id: parcel.id, unit_type: 'shop', unit_name: `Dükkan ${i}`, created_by: user?.id ?? null })
       }
+
       if (units.length > 0) await createUnits.mutateAsync(units)
 
       router.push(`/parcels/${parcel.id}`)
@@ -161,7 +176,7 @@ export function ParcelForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-6 max-w-2xl mx-auto p-4 md:p-6">
+    <form onSubmit={handleSubmit(onSubmit as Parameters<typeof handleSubmit>[0])} className="space-y-6 max-w-2xl mx-auto p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-bold">Yeni Parsel</h1>
         <p className="text-sm text-muted-foreground mt-1">Mahalle, ada ve parsel bilgilerini girin</p>
@@ -172,12 +187,9 @@ export function ParcelForm() {
         <CardHeader><CardTitle className="text-base">Konum</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {fromMap ? (
-            // Pre-filled from map — show read-only
-            <div className="flex items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2.5 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
-              <span className="text-blue-800">
-                <strong>{fromMap.neighborhoodName}</strong> • Ada <strong>{fromMap.blockNo}</strong>
-              </span>
+            <div className="flex items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span className="font-medium">{fromMap.neighborhoodName} • Ada {fromMap.blockNo}</span>
             </div>
           ) : (
             <>
@@ -205,10 +217,7 @@ export function ParcelForm() {
               <div className="space-y-1.5">
                 <Label>Ada No *</Label>
                 <div className="flex gap-2">
-                  <Select
-                    onValueChange={(v) => setValue('block_id', v)}
-                    disabled={!neighborhoodId}
-                  >
+                  <Select onValueChange={(v) => setValue('block_id', v)} disabled={!neighborhoodId}>
                     <SelectTrigger className="flex-1">
                       <SelectValue placeholder={neighborhoodId ? 'Ada seçin veya yazın' : 'Önce mahalle seçin'} />
                     </SelectTrigger>
@@ -237,13 +246,16 @@ export function ParcelForm() {
                 {...register('parcel_no')}
                 placeholder="Örn: 5"
                 className="flex-1"
-                onChange={() => { setAutoCode(false); setValue('is_auto_code', false) }}
+                onChange={() => {
+                  setAutoCode(false)
+                  setValue('is_auto_code', false)
+                }}
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={!selectedNeighborhood && !fromMap}
+                disabled={!fromMap && !selectedNeighborhood}
                 onClick={generateCode}
                 className="gap-1.5 shrink-0"
               >
@@ -289,7 +301,7 @@ export function ParcelForm() {
         </CardContent>
       </Card>
 
-      {/* Parsel Sınırı */}
+      {/* Harita / Poligon */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -301,15 +313,17 @@ export function ParcelForm() {
           {drawnCoords.length >= 3 ? (
             <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
               <span>✓ {drawnCoords.length} noktalı poligon çizildi</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="ml-auto h-7 text-xs"
-                onClick={() => { setDrawnCoords([]); setDrawActive(false) }}
-              >
-                Yeniden çiz
-              </Button>
+              {!fromMap && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 text-xs"
+                  onClick={() => { setDrawnCoords([]); setDrawActive(false) }}
+                >
+                  Yeniden çiz
+                </Button>
+              )}
             </div>
           ) : (
             <div className="text-sm text-muted-foreground bg-secondary rounded-md px-3 py-2">
@@ -317,7 +331,6 @@ export function ParcelForm() {
             </div>
           )}
 
-          {/* Haritadan gelmediyse manual çizim butonu */}
           {!fromMap && (
             <Button
               type="button"
@@ -351,7 +364,9 @@ export function ParcelForm() {
       </Card>
 
       {serverError && (
-        <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">{serverError}</div>
+        <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {serverError}
+        </div>
       )}
 
       <div className="flex gap-3">
