@@ -44,6 +44,7 @@ export function MapContainer({
   const [selectedParcel, setSelectedParcel] = useState<ParcelMapFeature | null>(null)
   const [pointCount, setPointCount] = useState(0)
   const [searching, setSearching] = useState(false)
+  const [searchMsg, setSearchMsg] = useState<string | null>(null)
   const showParcels = zoom >= PARCEL_ZOOM_THRESHOLD
 
   // Initialize map
@@ -66,23 +67,29 @@ export function MapContainer({
     }
   }, [])
 
-  // Address search driven by React's onKeyDown so it works after input remounts
+  // Address search — callback API is more reliable than Promise across browser/Maps versions
   const handleSearch = useCallback(() => {
     const q = searchRef.current?.value.trim()
-    if (!q || !geocoderRef.current || !providerRef.current) return
+    if (!q) return
+    if (!geocoderRef.current || !providerRef.current) return
     setSearching(true)
-    geocoderRef.current
-      .geocode({ address: q, region: 'tr', componentRestrictions: { country: 'tr' } })
-      .then(({ results }) => {
+    setSearchMsg(null)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(geocoderRef.current as any).geocode(
+      { address: q, region: 'tr' },
+      (results: google.maps.GeocoderResult[] | null, status: string) => {
         setSearching(false)
-        if (results?.[0]) {
+        if (status === 'OK' && results?.[0]) {
           const loc = results[0].geometry.location
           providerRef.current?.setCenter({ lat: loc.lat(), lng: loc.lng() })
           providerRef.current?.setZoom(17)
           if (searchRef.current) searchRef.current.value = results[0].formatted_address ?? q
+        } else {
+          setSearchMsg('Adres bulunamadı')
+          setTimeout(() => setSearchMsg(null), 3000)
         }
-      })
-      .catch(() => setSearching(false))
+      }
+    )
   }, [])
 
   // When a parcel is selected, reverse-geocode its centre and fill the search bar
@@ -202,8 +209,8 @@ export function MapContainer({
             <input
               ref={searchRef}
               type="text"
-              placeholder="Adres ara... (Enter)"
-              className="w-full h-9 rounded-full border bg-white/95 backdrop-blur px-4 pr-10 text-sm shadow-md outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Adres ara..."
+              className="w-full h-9 rounded-full border bg-white/95 backdrop-blur px-4 pr-20 text-sm shadow-md outline-none focus:ring-2 focus:ring-primary"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
@@ -211,10 +218,19 @@ export function MapContainer({
                 }
               }}
             />
-            {searching && (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-            )}
+            <button
+              onClick={handleSearch}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-3 rounded-full bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+              disabled={searching}
+            >
+              {searching ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Ara'}
+            </button>
           </div>
+          {searchMsg && (
+            <p className="mt-1 ml-4 text-xs text-destructive bg-white/95 rounded-full px-3 py-0.5 shadow w-fit">
+              {searchMsg}
+            </p>
+          )}
         </div>
       )}
 

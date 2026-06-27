@@ -82,9 +82,9 @@ export const POLYGON_STYLES: Record<string, PolygonStyle> = {
   },
   ada: {
     fillColor: '#3b82f6',
-    fillOpacity: 0.08,
+    fillOpacity: 0.2,
     strokeColor: '#2563eb',
-    strokeWeight: 3,
+    strokeWeight: 4,
     clickable: false,
   },
 }
