@@ -71,7 +71,12 @@ export function MapContainer({
   const handleSearch = useCallback(() => {
     const q = searchRef.current?.value.trim()
     if (!q) return
-    if (!geocoderRef.current || !providerRef.current) return
+    if (!providerRef.current) return
+    if (!geocoderRef.current) {
+      setSearchMsg('Harita henüz yüklenmedi, lütfen bekleyin')
+      setTimeout(() => setSearchMsg(null), 3000)
+      return
+    }
     setSearching(true)
     setSearchMsg(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,8 +89,11 @@ export function MapContainer({
           providerRef.current?.setCenter({ lat: loc.lat(), lng: loc.lng() })
           providerRef.current?.setZoom(17)
           if (searchRef.current) searchRef.current.value = results[0].formatted_address ?? q
+        } else if (status === 'REQUEST_DENIED') {
+          setSearchMsg('Geocoding API aktif değil — Google Cloud Console\'dan etkinleştirin')
+          setTimeout(() => setSearchMsg(null), 8000)
         } else {
-          setSearchMsg('Adres bulunamadı')
+          setSearchMsg(`Adres bulunamadı (${status})`)
           setTimeout(() => setSearchMsg(null), 3000)
         }
       }
@@ -94,15 +102,17 @@ export function MapContainer({
 
   // When a parcel is selected, reverse-geocode its centre and fill the search bar
   useEffect(() => {
-    if (!selectedParcel?.center || !geocoderRef.current || !searchRef.current) return
-    geocoderRef.current
-      .geocode({ location: selectedParcel.center, region: 'tr' })
-      .then(({ results }) => {
-        if (results?.[0] && searchRef.current) {
+    if (!selectedParcel?.center || !searchRef.current) return
+    if (!geocoderRef.current) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(geocoderRef.current as any).geocode(
+      { location: selectedParcel.center, region: 'tr' },
+      (results: google.maps.GeocoderResult[] | null, status: string) => {
+        if (status === 'OK' && results?.[0] && searchRef.current) {
           searchRef.current.value = results[0].formatted_address
         }
-      })
-      .catch(() => { /* ignore */ })
+      }
+    )
   }, [selectedParcel])
 
   // Render parcels or block markers
