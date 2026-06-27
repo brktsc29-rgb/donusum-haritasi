@@ -71,31 +71,31 @@ export function MapContainer({
     const q = searchRef.current?.value.trim()
     if (!q || !geocoderRef.current || !providerRef.current) return
     setSearching(true)
-    geocoderRef.current.geocode(
-      { address: q, region: 'tr', componentRestrictions: { country: 'tr' } },
-      (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
+    geocoderRef.current
+      .geocode({ address: q, region: 'tr', componentRestrictions: { country: 'tr' } })
+      .then(({ results }) => {
         setSearching(false)
-        if (status === 'OK' && results?.[0]) {
+        if (results?.[0]) {
           const loc = results[0].geometry.location
           providerRef.current?.setCenter({ lat: loc.lat(), lng: loc.lng() })
           providerRef.current?.setZoom(17)
           if (searchRef.current) searchRef.current.value = results[0].formatted_address ?? q
         }
-      }
-    )
+      })
+      .catch(() => setSearching(false))
   }, [])
 
   // When a parcel is selected, reverse-geocode its centre and fill the search bar
   useEffect(() => {
     if (!selectedParcel?.center || !geocoderRef.current || !searchRef.current) return
-    geocoderRef.current.geocode(
-      { location: selectedParcel.center, region: 'tr' },
-      (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
-        if (status === 'OK' && results?.[0] && searchRef.current) {
+    geocoderRef.current
+      .geocode({ location: selectedParcel.center, region: 'tr' })
+      .then(({ results }) => {
+        if (results?.[0] && searchRef.current) {
           searchRef.current.value = results[0].formatted_address
         }
-      }
-    )
+      })
+      .catch(() => { /* ignore */ })
   }, [selectedParcel])
 
   // Render parcels or block markers
