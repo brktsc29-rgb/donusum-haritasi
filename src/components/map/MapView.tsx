@@ -58,13 +58,52 @@ export function MapView() {
     decisionStatus: null,
   })
 
-  const [mode, setMode] = useState<MapMode>('view')
-  const [adaCoords, setAdaCoords] = useState<LatLng[] | undefined>()
-  const [adaNeighborhoodId, setAdaNeighborhoodId] = useState('')
-  const [adaBlockNo, setAdaBlockNo] = useState('')
-  const [adaBlockId, setAdaBlockId] = useState<string | null>(null)
+  // Restore ada session state so returning from /parcels/new keeps the ada polygon
+  const [mode, setMode] = useState<MapMode>(() => {
+    try {
+      const s = sessionStorage.getItem('activeAdaSession')
+      if (s) { const p = JSON.parse(s); return p.mode ?? 'view' }
+    } catch { /* ignore */ }
+    return 'view'
+  })
+  const [adaCoords, setAdaCoords] = useState<LatLng[] | undefined>(() => {
+    try {
+      const s = sessionStorage.getItem('activeAdaSession')
+      if (s) { const p = JSON.parse(s); return p.adaCoords ?? undefined }
+    } catch { /* ignore */ }
+    return undefined
+  })
+  const [adaNeighborhoodId, setAdaNeighborhoodId] = useState(() => {
+    try {
+      const s = sessionStorage.getItem('activeAdaSession')
+      if (s) { const p = JSON.parse(s); return p.adaNeighborhoodId ?? '' }
+    } catch { /* ignore */ }
+    return ''
+  })
+  const [adaBlockNo, setAdaBlockNo] = useState(() => {
+    try {
+      const s = sessionStorage.getItem('activeAdaSession')
+      if (s) { const p = JSON.parse(s); return p.adaBlockNo ?? '' }
+    } catch { /* ignore */ }
+    return ''
+  })
+  const [adaBlockId, setAdaBlockId] = useState<string | null>(() => {
+    try {
+      const s = sessionStorage.getItem('activeAdaSession')
+      if (s) { const p = JSON.parse(s); return p.adaBlockId ?? null }
+    } catch { /* ignore */ }
+    return null
+  })
   const [savingAda, setSavingAda] = useState(false)
   const [adaError, setAdaError] = useState<string | null>(null)
+
+  // Persist active ada session so navigation to /parcels/new doesn't lose it
+  const saveAdaSession = useCallback((patch: Record<string, unknown>) => {
+    try {
+      const existing = JSON.parse(sessionStorage.getItem('activeAdaSession') ?? '{}')
+      sessionStorage.setItem('activeAdaSession', JSON.stringify({ ...existing, ...patch }))
+    } catch { /* ignore */ }
+  }, [])
 
   const filtered = useMemo(() => {
     return parcels.filter((p) => {
@@ -76,6 +115,7 @@ export function MapView() {
   const handleAdaDrawComplete = useCallback(async (coords: LatLng[]) => {
     setAdaCoords(coords)
     setMode('ada-info')
+    saveAdaSession({ adaCoords: coords, mode: 'ada-info' })
     // Auto-detect neighborhood from drawn location
     const centroid = {
       lat: coords.reduce((s, c) => s + c.lat, 0) / coords.length,
@@ -91,11 +131,12 @@ export function MapView() {
         if (matched) setAdaNeighborhoodId(matched.id)
       }
     } catch { /* ignore */ }
-  }, [neighborhoods])
+  }, [neighborhoods, saveAdaSession])
 
   const handleAdaDrawCancel = useCallback(() => {
     setAdaCoords(undefined)
     setMode('view')
+    sessionStorage.removeItem('activeAdaSession')
   }, [])
 
   const handleSaveAda = useCallback(async () => {
@@ -109,12 +150,13 @@ export function MapView() {
       const block = await orCreateBlock(adaNeighborhoodId, adaBlockNo.trim())
       setAdaBlockId(block.id)
       setMode('ada-drawn')
+      saveAdaSession({ adaBlockId: block.id, adaNeighborhoodId, adaBlockNo: adaBlockNo.trim(), mode: 'ada-drawn' })
     } catch (err) {
       setAdaError(err instanceof Error ? err.message : 'Kayıt hatası')
     } finally {
       setSavingAda(false)
     }
-  }, [adaNeighborhoodId, adaBlockNo, orCreateBlock])
+  }, [adaNeighborhoodId, adaBlockNo, orCreateBlock, saveAdaSession])
 
   const handleParcelDrawComplete = useCallback((coords: LatLng[]) => {
     const neighborhood = neighborhoods.find((n) => n.id === adaNeighborhoodId)
@@ -139,6 +181,7 @@ export function MapView() {
     setAdaNeighborhoodId('')
     setAdaBlockNo('')
     setMode('view')
+    sessionStorage.removeItem('activeAdaSession')
   }, [])
 
   const selectedNeighborhoodName = neighborhoods.find((n) => n.id === adaNeighborhoodId)?.name
