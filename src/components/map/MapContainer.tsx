@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { Undo2, CheckCircle2, X } from 'lucide-react'
+import { Undo2, CheckCircle2, X, Loader2 } from 'lucide-react'
 import { GoogleMapsProvider } from '@/lib/map/providers/google'
 import { PARCEL_ZOOM_THRESHOLD, POLYGON_STYLES, DEFAULT_MAP_OPTIONS } from '@/lib/map/types'
 import type { MapProvider } from '@/lib/map/types'
@@ -32,10 +32,18 @@ export function MapContainer({
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const providerRef = useRef<MapProvider | null>(null)
+  // Geocoder stored in a ref so it survives search-input remounts
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null)
   const adaFittedRef = useRef(false)
+  // Mirror adaCoords to a ref so the parcels effect can re-add it after
+  // clearPolygons() without adding adaCoords to that effect's dep array
+  const adaCoordsRef = useRef(adaCoords)
+  adaCoordsRef.current = adaCoords
+
   const [zoom, setZoom] = useState(DEFAULT_MAP_OPTIONS.zoom)
   const [selectedParcel, setSelectedParcel] = useState<ParcelMapFeature | null>(null)
   const [pointCount, setPointCount] = useState(0)
+  const [searching, setSearching] = useState(false)
   const showParcels = zoom >= PARCEL_ZOOM_THRESHOLD
 
   // Initialize map
@@ -46,20 +54,49 @@ export function MapContainer({
 
     provider.initialize(containerRef.current, DEFAULT_MAP_OPTIONS).then(() => {
       provider.onZoomChange((z) => setZoom(z))
-      if (searchRef.current) {
-        provider.initSearchBox(searchRef.current, (latlng, name) => {
-          provider.setCenter(latlng)
-          provider.setZoom(17)
-          if (searchRef.current) searchRef.current.value = name
-        })
+      if (typeof window !== 'undefined' && window.google?.maps) {
+        geocoderRef.current = new window.google.maps.Geocoder()
       }
     })
 
     return () => {
       provider.destroy()
       providerRef.current = null
+      geocoderRef.current = null
     }
   }, [])
+
+  // Address search driven by React's onKeyDown so it works after input remounts
+  const handleSearch = useCallback(() => {
+    const q = searchRef.current?.value.trim()
+    if (!q || !geocoderRef.current || !providerRef.current) return
+    setSearching(true)
+    geocoderRef.current.geocode(
+      { address: q, region: 'tr', componentRestrictions: { country: 'tr' } },
+      (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
+        setSearching(false)
+        if (status === 'OK' && results?.[0]) {
+          const loc = results[0].geometry.location
+          providerRef.current?.setCenter({ lat: loc.lat(), lng: loc.lng() })
+          providerRef.current?.setZoom(17)
+          if (searchRef.current) searchRef.current.value = results[0].formatted_address ?? q
+        }
+      }
+    )
+  }, [])
+
+  // When a parcel is selected, reverse-geocode its centre and fill the search bar
+  useEffect(() => {
+    if (!selectedParcel?.center || !geocoderRef.current || !searchRef.current) return
+    geocoderRef.current.geocode(
+      { location: selectedParcel.center, region: 'tr' },
+      (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatus) => {
+        if (status === 'OK' && results?.[0] && searchRef.current) {
+          searchRef.current.value = results[0].formatted_address
+        }
+      }
+    )
+  }, [selectedParcel])
 
   // Render parcels or block markers
   useEffect(() => {
@@ -103,19 +140,29 @@ export function MapContainer({
       })
     }
 
-    // Render ada overlay (non-clickable, so parcel clicks pass through)
+    // Re-add ada after clearing — read from ref to avoid adding adaCoords to deps
+    const ada = adaCoordsRef.current
+    if (ada && ada.length >= 3) {
+      provider.addPolygon('__ada__', ada, POLYGON_STYLES.ada)
+    }
+  }, [parcels, showParcels, onParcelClick])
+
+  // Ada overlay managed in its own effect so adaCoords changes update it
+  // independently of parcels. Declared after the parcels effect so React runs
+  // it last — the ada polygon always ends up on top after any clearPolygons().
+  useEffect(() => {
+    const provider = providerRef.current
+    if (!provider) return
+    provider.removePolygon('__ada__')
     if (adaCoords && adaCoords.length >= 3) {
       provider.addPolygon('__ada__', adaCoords, POLYGON_STYLES.ada)
       if (!adaFittedRef.current) {
         provider.fitCoords(adaCoords)
-        adaFittedRef.current = true
       }
+      adaFittedRef.current = true
+    } else {
+      adaFittedRef.current = false
     }
-  }, [parcels, showParcels, adaCoords, onParcelClick])
-
-  // Reset ada fitted flag when adaCoords changes
-  useEffect(() => {
-    adaFittedRef.current = false
   }, [adaCoords])
 
   // Draw mode toggle
@@ -147,15 +194,27 @@ export function MapContainer({
     <div className="relative w-full h-full">
       <div ref={containerRef} className="map-container w-full h-full" />
 
-      {/* Search bar — hidden during draw */}
+      {/* Search bar — hidden during draw; uses React onKeyDown (not a native DOM
+          listener) so it survives being unmounted/remounted when drawMode toggles */}
       {!drawMode && (
         <div className="absolute top-3 left-3 right-14 z-10">
-          <input
-            ref={searchRef}
-            type="text"
-            placeholder="Adres ara... (Enter)"
-            className="w-full h-9 rounded-full border bg-white/95 backdrop-blur px-4 text-sm shadow-md outline-none focus:ring-2 focus:ring-primary"
-          />
+          <div className="relative">
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Adres ara... (Enter)"
+              className="w-full h-9 rounded-full border bg-white/95 backdrop-blur px-4 pr-10 text-sm shadow-md outline-none focus:ring-2 focus:ring-primary"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleSearch()
+                }
+              }}
+            />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
         </div>
       )}
 
